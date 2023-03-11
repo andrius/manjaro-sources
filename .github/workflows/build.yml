@@ -1,0 +1,54 @@
+# vim: set filetype=yaml ts=2 sw=2 sts=2 et:
+#
+---
+name: "Build manjaro sources"
+
+env:
+  DEBUG: ${{ inputs.debug || true }}
+  VERBOSE: ${{ inputs.verbose || true }}
+
+on:
+  workflow_dispatch:
+
+  push:
+    branches:
+      - main
+      - master
+
+  schedule:
+    # At 02:00 on day-of-month 1 - https://crontab.guru/#0_2_1_*_*
+    - cron: "0 0 1 * *"
+
+defaults:
+  run:
+    shell: bash -euxo pipefail {0}
+
+jobs:
+  create-sources:
+    name: "Build manjaro sources"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - run: docker run --privileged --tty --rm --volume "$(pwd)":/build -v /proc:/proc manjarolinux/base:latest bash -c 'cd /build && ./create-image.sh'
+
+      - name: Push changes
+        run: |
+          if [[ $(git status --porcelain | wc -l) > 0 ]]; then
+            # https://github.com/actions/checkout/issues/13#issuecomment-724415212
+            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config --global user.name "github-actions[bot]"
+            # git lfs track manjaro.tar.gz
+
+            git add .
+
+            TIMESTAMP="$(date -u '+%Y-%m-%d %H:%M:%S') UTC"
+            git commit --all --no-gpg-sign --amend --message "manjaro.tar.gz updated at ${TIMESTAMP} [skip actions]"
+
+            git push --force
+          else
+            MESSAGE="manjaro.tar.gz content haven't changed! Repository won't be updated!"
+            echo "${MESSAGE}"
+            echo "::notice::${MESSAGE}"
+          fi
